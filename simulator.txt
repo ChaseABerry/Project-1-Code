@@ -1,0 +1,95 @@
+import java.io.*;
+import java.util.*;
+
+public class Simulator {
+
+    static final int START_ADDRESS = 256;
+    static int[] registers = new int[32];
+    static Map<Integer, Integer> memory = new TreeMap<>();
+    static List<String> binaryLines = new ArrayList<>();
+    static boolean running = true;
+
+    public static void main(String[] args) throws IOException {
+        binaryLines = readInputFile("input.txt");
+        PrintWriter writer = new PrintWriter("simulation.txt");
+
+        int pc = 0;
+        int address = START_ADDRESS;
+        int cycle = 1;
+
+        while (running && pc < binaryLines.size()) {
+            String bin = binaryLines.get(pc);
+            String instr = Disassembler.decodeInstruction(bin, address);
+
+            writer.println("--------------------");
+            writer.println("Cycle " + cycle + ":\t" + address + "\t" + instr);
+
+            executeInstruction(bin, address);
+            printRegisters(writer);
+            printMemory(writer);
+
+            pc++;
+            address += 4;
+            cycle++;
+        }
+
+        writer.close();
+        System.out.println("Simulation complete. Output written to simulation.txt");
+    }
+
+    static List<String> readInputFile(String filename) throws IOException {
+        List<String> lines = new ArrayList<>();
+        BufferedReader reader = new BufferedReader(new FileReader(filename));
+        String line;
+        while ((line = reader.readLine()) != null) {
+            if (!line.trim().isEmpty())
+                lines.add(line.trim());
+        }
+        reader.close();
+        return lines;
+    }
+
+    static void executeInstruction(String bin, int addr) {
+        String opcode = bin.substring(25, 30);
+        String last2 = bin.substring(30);
+
+        if (last2.equals("00")) {
+            if (opcode.equals("11111")) {
+                running = false; // break
+            } else if (opcode.equals("00000")) {
+                int rd = Integer.parseInt(bin.substring(20, 25), 2);
+                int imm = Disassembler.signExtend(bin.substring(0, 20) + "0", 21);
+                registers[rd] = addr + 4 + imm;
+            }
+        }
+
+        else if (last2.equals("01")) {
+            int rd = Integer.parseInt(bin.substring(20, 25), 2);
+            int rs1 = Integer.parseInt(bin.substring(12, 17), 2);
+            int rs2 = Integer.parseInt(bin.substring(7, 12), 2);
+            switch (opcode) {
+                case "00000": registers[rd] = registers[rs1] + registers[rs2]; break;
+                case "00001": registers[rd] = registers[rs1] - registers[rs2]; break;
+                case "00010": registers[rd] = registers[rs1] & registers[rs2]; break;
+                case "00011": registers[rd] = registers[rs1] | registers[rs2]; break;
+            }
+        }
+
+        else if (last2.equals("10")) {
+            int rd = Integer.parseInt(bin.substring(20, 25), 2);
+            int rs1 = Integer.parseInt(bin.substring(12, 17), 2);
+            int imm = Disassembler.signExtend(bin.substring(0, 12), 12);
+            switch (opcode) {
+                case "00000": registers[rd] = registers[rs1] + imm; break;
+                case "00001": registers[rd] = registers[rs1] & imm; break;
+                case "00010": registers[rd] = registers[rs1] | imm; break;
+                case "00011": registers[rd] = registers[rs1] << imm; break;
+                case "00100": registers[rd] = registers[rs1] >> imm; break;
+                case "00101": registers[rd] = memory.getOrDefault(registers[rs1] + imm, 0); break;
+            }
+        }
+
+        else if (last2.equals("11")) {
+            int rs1 = Integer.parseInt(bin.substring(12, 17), 2);
+            int rs2 = Integer.parseInt(bin.substring(7, 12), 2);
+            int imm = Disassembler.signExtend(bin.substring(0, 7)k

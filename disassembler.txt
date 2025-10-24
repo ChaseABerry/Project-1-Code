@@ -1,0 +1,105 @@
+import java.io.*;
+import java.util.*;
+
+public class Disassembler {
+
+    static final int START_ADDRESS = 256;
+
+    public static void main(String[] args) throws IOException {
+        List<String> binaryLines = readInputFile("input.txt");
+        PrintWriter writer = new PrintWriter("disassembly.txt");
+
+        int address = START_ADDRESS;
+        for (String bin : binaryLines) {
+            String instruction = decodeInstruction(bin, address);
+            writer.println(bin + "\t" + address + "\t" + instruction);
+            address += 4;
+        }
+
+        writer.close();
+        System.out.println("Disassembly complete. Output written to disassembly.txt");
+    }
+
+    static List<String> readInputFile(String filename) throws IOException {
+        List<String> lines = new ArrayList<>();
+        BufferedReader reader = new BufferedReader(new FileReader(filename));
+        String line;
+        while ((line = reader.readLine()) != null) {
+            if (!line.trim().isEmpty())
+                lines.add(line.trim());
+        }
+        reader.close();
+        return lines;
+    }
+
+    static String decodeInstruction(String bin, int addr) {
+        String opcode = bin.substring(25, 30);
+        String last2 = bin.substring(30);
+        String instr = "";
+
+        // Category 4
+        if (last2.equals("00")) {
+            if (opcode.equals("11111")) return "break";
+            if (opcode.equals("00000")) {
+                String rd = reg(Integer.parseInt(bin.substring(20, 25), 2));
+                int imm = signExtend(bin.substring(0, 20) + "0", 21);
+                return "jal " + rd + ", #" + imm;
+            }
+        }
+
+        // Category 1
+        if (last2.equals("11")) {
+            String rs1 = reg(Integer.parseInt(bin.substring(12, 17), 2));
+            String rs2 = reg(Integer.parseInt(bin.substring(7, 12), 2));
+            int imm = signExtend(bin.substring(0, 7) + bin.substring(20, 25) + "0", 13);
+            switch (opcode) {
+                case "00000": return "beq " + rs1 + ", " + rs2 + ", #" + imm;
+                case "00001": return "bne " + rs1 + ", " + rs2 + ", #" + imm;
+                case "00010": return "blt " + rs1 + ", " + rs2 + ", #" + imm;
+                case "00011": return "sw " + rs1 + ", #" + imm + "(" + rs2 + ")";
+            }
+        }
+
+        // Category 2
+        if (last2.equals("01")) {
+            String rd = reg(Integer.parseInt(bin.substring(20, 25), 2));
+            String rs1 = reg(Integer.parseInt(bin.substring(12, 17), 2));
+            String rs2 = reg(Integer.parseInt(bin.substring(7, 12), 2));
+            switch (opcode) {
+                case "00000": return "add " + rd + ", " + rs1 + ", " + rs2;
+                case "00001": return "sub " + rd + ", " + rs1 + ", " + rs2;
+                case "00010": return "and " + rd + ", " + rs1 + ", " + rs2;
+                case "00011": return "or " + rd + ", " + rs1 + ", " + rs2;
+            }
+        }
+
+        // Category 3
+        if (last2.equals("10")) {
+            String rd = reg(Integer.parseInt(bin.substring(20, 25), 2));
+            String rs1 = reg(Integer.parseInt(bin.substring(12, 17), 2));
+            int imm = signExtend(bin.substring(0, 12), 12);
+            switch (opcode) {
+                case "00000": return "addi " + rd + ", " + rs1 + ", #" + imm;
+                case "00001": return "andi " + rd + ", " + rs1 + ", #" + imm;
+                case "00010": return "ori " + rd + ", " + rs1 + ", #" + imm;
+                case "00011": return "sll " + rd + ", " + rs1 + ", #" + imm;
+                case "00100": return "sra " + rd + ", " + rs1 + ", #" + imm;
+                case "00101": return "lw " + rd + ", #" + imm + "(" + rs1 + ")";
+            }
+        }
+
+        return "unknown";
+    }
+
+    static String reg(int x) {
+        return "x" + x;
+    }
+
+    static int signExtend(String bin, int bits) {
+        int val = Integer.parseInt(bin, 2);
+        if (bin.charAt(0) == '1') {
+            val -= (1 << bits);
+        }
+        return val;
+    }
+}
