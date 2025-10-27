@@ -1,0 +1,221 @@
+import java.io.*;
+import java.util.*;
+
+public class Main {
+
+    static final int START_ADDRESS = 256;
+    static final int NUM_REGS = 32;
+    static int[] registers = new int[NUM_REGS];
+    static Map<Integer, Integer> memory = new TreeMap<>();
+
+    static List<String> binaryLines = new ArrayList<>();
+    static List<String> instructions = new ArrayList<>();
+    static List<Integer> addresses = new ArrayList<>();
+
+    static boolean breakFound = false;
+    static int breakIndex = -1;
+
+    public static void main(String[] args) throws IOException {
+        readInput();
+        disassemble();
+        simulate();
+    }
+
+    static void readInput() throws IOException {
+        BufferedReader reader = new BufferedReader(new FileReader("input.txt"));
+        String line;
+        while ((line = reader.readLine()) != null) {
+            if (!line.trim().isEmpty())
+                binaryLines.add(line.trim());
+        }
+        reader.close();
+    }
+
+    static void disassemble() throws IOException {
+        PrintWriter writer = new PrintWriter("disassembly.txt");
+        int address = START_ADDRESS;
+
+        for (int i = 0; i < binaryLines.size(); i++) {
+            String bin = binaryLines.get(i);
+            String asm = decodeInstruction(bin, address);
+            instructions.add(asm);
+            addresses.add(address);
+            writer.println(bin + "\t" + address + "\t" + asm);
+            address += 4;
+        }
+
+        writer.close();
+    }
+
+    static String decodeInstruction(String bin, int addr) {
+        String opcode = bin.substring(25, 30);
+        String last2 = bin.substring(30);
+        String instr = "";
+
+        // Category 4: jal, break
+        if (last2.equals("00")) {
+            if (opcode.equals("11111")) {
+                instr = "break";
+                breakFound = true;
+                breakIndex = addresses.size();
+                return instr;
+            } else if (opcode.equals("00000")) {
+                String rd = reg(Integer.parseInt(bin.substring(20, 25), 2));
+                int imm = signExtend(bin.substring(0, 20) + "0", 21);
+                instr = "jal " + rd + ", #" + imm;
+            }
+        }
+
+        // Category 1: beq, bne, blt, sw
+        else if (last2.equals("11")) {
+            String rs1 = reg(Integer.parseInt(bin.substring(12, 17), 2));
+            String rs2 = reg(Integer.parseInt(bin.substring(7, 12), 2));
+            int imm = signExtend(bin.substring(0, 7) + bin.substring(20, 25) + "0", 13);
+            switch (opcode) {
+                case "00000": instr = "beq " + rs1 + ", " + rs2 + ", #" + imm; break;
+                case "00001": instr = "bne " + rs1 + ", " + rs2 + ", #" + imm; break;
+                case "00010": instr = "blt " + rs1 + ", " + rs2 + ", #" + imm; break;
+                case "00011": instr = "sw " + rs1 + ", #" + imm + "(" + rs2 + ")"; break;
+            }
+        }
+
+        // Category 2: add, sub, and, or
+        else if (last2.equals("01")) {
+            String rd = reg(Integer.parseInt(bin.substring(20, 25), 2));
+            String rs1 = reg(Integer.parseInt(bin.substring(12, 17), 2));
+            String rs2 = reg(Integer.parseInt(bin.substring(7, 12), 2));
+            switch (opcode) {
+                case "00000": instr = "add " + rd + ", " + rs1 + ", " + rs2; break;
+                case "00001": instr = "sub " + rd + ", " + rs1 + ", " + rs2; break;
+                case "00010": instr = "and " + rd + ", " + rs1 + ", " + rs2; break;
+                case "00011": instr = "or " + rd + ", " + rs1 + ", " + rs2; break;
+            }
+        }
+
+        // Category 3: addi, andi, ori, sll, sra, lw
+        else if (last2.equals("10")) {
+            String rd = reg(Integer.parseInt(bin.substring(20, 25), 2));
+            String rs1 = reg(Integer.parseInt(bin.substring(12, 17), 2));
+            int imm = signExtend(bin.substring(0, 12), 12);
+            switch (opcode) {
+                case "00000": instr = "addi " + rd + ", " + rs1 + ", #" + imm; break;
+                case "00001": instr = "andi " + rd + ", " + rs1 + ", #" + imm; break;
+                case "00010": instr = "ori " + rd + ", " + rs1 + ", #" + imm; break;
+                case "00011": instr = "sll " + rd + ", " + rs1 + ", #" + imm; break;
+                case "00100": instr = "sra " + rd + ", " + rs1 + ", #" + imm; break;
+                case "00101": instr = "lw " + rd + ", #" + imm + "(" + rs1 + ")"; break;
+            }
+        }
+
+        return instr;
+    }
+
+    static void simulate() throws IOException {
+        PrintWriter writer = new PrintWriter("simulation.txt");
+        int pc = 0, cycle = 1;
+        while (pc < breakIndex) {
+            int address = addresses.get(pc);
+            String instr = instructions.get(pc);
+            String binary = binaryLines.get(pc);
+
+            writer.println("--------------------");
+            writer.println("Cycle " + cycle + ":\t" + address + "\t" + instr);
+            execute(binary, address);
+            printRegisters(writer);
+            printMemory(writer);
+
+            cycle++;
+            if (instr.equals("break")) break;
+            pc++;
+        }
+        writer.close();
+    }
+
+    static void execute(String bin, int addr) {
+        String opcode = bin.substring(25, 30);
+        String last2 = bin.substring(30);
+
+        if (last2.equals("00")) {
+            if (opcode.equals("00000")) {
+                // jal
+                int rd = Integer.parseInt(bin.substring(20, 25), 2);
+                int imm = signExtend(bin.substring(0, 20) + "0", 21);
+                registers[rd] = addr + 4 + imm;
+            }
+        }
+
+        else if (last2.equals("11")) {
+            int rs1 = Integer.parseInt(bin.substring(12, 17), 2);
+            int rs2 = Integer.parseInt(bin.substring(7, 12), 2);
+            int imm = signExtend(bin.substring(0, 7) + bin.substring(20, 25) + "0", 13);
+            switch (opcode) {
+                case "00000": if (registers[rs1] == registers[rs2]) addr += imm; break;
+                case "00001": if (registers[rs1] != registers[rs2]) addr += imm; break;
+                case "00010": if (registers[rs1] < registers[rs2]) addr += imm; break;
+                case "00011": memory.put(registers[rs2] + imm, registers[rs1]); break;
+            }
+        }
+
+        else if (last2.equals("01")) {
+            int rd = Integer.parseInt(bin.substring(20, 25), 2);
+            int rs1 = Integer.parseInt(bin.substring(12, 17), 2);
+            int rs2 = Integer.parseInt(bin.substring(7, 12), 2);
+            switch (opcode) {
+                case "00000": registers[rd] = registers[rs1] + registers[rs2]; break;
+                case "00001": registers[rd] = registers[rs1] - registers[rs2]; break;
+                case "00010": registers[rd] = registers[rs1] & registers[rs2]; break;
+                case "00011": registers[rd] = registers[rs1] | registers[rs2]; break;
+            }
+        }
+
+        else if (last2.equals("10")) {
+            int rd = Integer.parseInt(bin.substring(20, 25), 2);
+            int rs1 = Integer.parseInt(bin.substring(12, 17), 2);
+            int imm = signExtend(bin.substring(0, 12), 12);
+            switch (opcode) {
+                case "00000": registers[rd] = registers[rs1] + imm; break;
+                case "00001": registers[rd] = registers[rs1] & imm; break;
+                case "00010": registers[rd] = registers[rs1] | imm; break;
+                case "00011": registers[rd] = registers[rs1] << imm; break;
+                case "00100": registers[rd] = registers[rs1] >> imm; break;
+                case "00101": registers[rd] = memory.getOrDefault(registers[rs1] + imm, 0); break;
+            }
+        }
+    }
+
+    static void printRegisters(PrintWriter writer) {
+        writer.println("Registers");
+        for (int i = 0; i < NUM_REGS; i += 8) {
+            writer.print(String.format("x%02d:\t", i));
+            for (int j = 0; j < 8; j++) {
+                writer.print(registers[i + j] + "\t");
+            }
+            writer.println();
+        }
+    }
+
+    static void printMemory(PrintWriter writer) {
+        if (memory.isEmpty()) return;
+        writer.println("Data");
+        int count = 0;
+        for (Map.Entry<Integer, Integer> entry : memory.entrySet()) {
+            if (count % 8 == 0) writer.print(entry.getKey() + ":\t");
+            writer.print(entry.getValue() + "\t");
+            count++;
+            if (count % 8 == 0) writer.println();
+        }
+        if (count % 8 != 0) writer.println();
+    }
+
+    static int signExtend(String bin, int bits) {
+        int val = Integer.parseInt(bin, 2);
+        if (bin.charAt(0) == '1') {
+            val -= (1 << bits);
+        }
+        return val;
+    }
+
+    static String reg(int x) {
+        return "x" + x;
+    }
+}
